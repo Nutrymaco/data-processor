@@ -16,7 +16,7 @@ type Pipe interface {
 
 type SelectiveTarget interface {
 	Target
-	Select(metadata map[string]any) bool
+	Select(metadata map[string]string) bool
 }
 
 type Action interface {

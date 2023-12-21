@@ -121,20 +121,20 @@ func Test(t *testing.T) {
 
 func Test_MultipleTargets(t *testing.T) {
 	source := NewArraySource([]*Work{
-		NewStringWork("test").WithMetadata(map[string]any{"type": 1}),
-		NewStringWork("test2").WithMetadata(map[string]any{"type": 2}),
-		NewStringWork("test2").WithMetadata(map[string]any{"type": 2}),
-		NewStringWork("test").WithMetadata(map[string]any{"type": 1}),
+		NewStringWork("test").WithMetadata(map[string]string{"type": 1}),
+		NewStringWork("test2").WithMetadata(map[string]string{"type": 2}),
+		NewStringWork("test2").WithMetadata(map[string]string{"type": 2}),
+		NewStringWork("test").WithMetadata(map[string]string{"type": 1}),
 	}, 1)
 	target1 := NewArrayTarget()
 	target2 := NewArrayTarget()
 	processor := NewProcessor(
 		[]Source{source},
 		[]SelectiveTarget{
-			TargetWithSelect(target1, func(metadata map[string]any) bool {
+			TargetWithSelect(target1, func(metadata map[string]string) bool {
 				return metadata["type"] == 1
 			}),
-			TargetWithSelect(target2, func(metadata map[string]any) bool {
+			TargetWithSelect(target2, func(metadata map[string]string) bool {
 				return metadata["type"] == 2
 			}),
 		},
@@ -172,12 +172,12 @@ func Test_ChainOfPipelines(t *testing.T) {
 		[]SelectiveTarget{
 			TargetWithSelect(
 				pipe1,
-				func(metadata map[string]any) bool {
+				func(metadata map[string]string) bool {
 					return metadata["type"] == 1
 				}),
 			TargetWithSelect(
 				pipe2,
-				func(metadata map[string]any) bool {
+				func(metadata map[string]string) bool {
 					return metadata["type"] == 2
 				},
 			),

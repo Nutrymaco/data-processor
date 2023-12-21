@@ -2,7 +2,7 @@ package core
 
 type Work struct {
 	Data     []byte
-	Metadata map[string]any
+	Metadata map[string]string
 }
 
 func NewStringWork(data string) *Work {
@@ -12,7 +12,7 @@ func NewStringWork(data string) *Work {
 func NewWork(data []byte) *Work {
 	return &Work{
 		Data:     data,
-		Metadata: map[string]any{},
+		Metadata: map[string]string{},
 	}
 }
 
@@ -20,7 +20,7 @@ func (w *Work) ReadString() string {
 	return string(w.Data)
 }
 
-func (w *Work) WithMetadata(metadata map[string]any) *Work {
+func (w *Work) WithMetadata(metadata map[string]string) *Work {
 	w.Metadata = metadata
 	return w
 }
