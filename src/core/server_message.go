@@ -2,9 +2,8 @@ package core
 
 import (
 	"bytes"
-	"errors"
-	"fmt"
 	"io"
+	"sync/atomic"
 )
 
 const MagicNumber = byte(77)
@@ -13,6 +12,11 @@ type serverMessage struct {
 	buf         bytes.Buffer
 	msgSizeRead [2]bool
 	msgSize     int
+	complete    atomic.Bool
+}
+
+func NewServerMessage() *serverMessage {
+	return &serverMessage{}
 }
 
 func (m *serverMessage) consume(reader io.Reader) error {
@@ -31,25 +35,36 @@ func (m *serverMessage) consume(reader io.Reader) error {
 		}
 	}
 	m.buf.ReadFrom(reader)
-
-	i := 0
-	if !m.magicNumberRead {
-		if newData[0] != MagicNumber {
-			panic(errors.New(fmt.Sprintf("first byte of message is not %d", MagicNumber)))
-		}
-		i++
-		m.magicNumberRead = true
+	if m.buf.Len() == m.msgSize {
+		m.complete.Store(true)
 	}
-	if !m.metadataRead {
-
-	}
-
+	return nil
 }
 
 func (m *serverMessage) isComplete() bool {
-
+	return m.complete.Load()
 }
 
-func (m *serverMessage) convertToWork() *Work {
-
+func (m *serverMessage) convertToWork() (*Work, error) {
+	keysCount, err := m.buf.ReadByte()
+	if err != nil {
+		return nil, err
+	}
+	metadata := map[string]string{}
+	for i := 0; i < int(keysCount); i++ {
+		key, err := m.buf.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		val, err := m.buf.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		metadata[key] = val
+	}
+	data := m.buf.Bytes()
+	return &Work{
+		Data:     data,
+		Metadata: metadata,
+	}, nil
 }

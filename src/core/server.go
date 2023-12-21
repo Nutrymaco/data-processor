@@ -9,7 +9,7 @@ import (
 type Server struct {
 	listener    net.Listener
 	inConns     []net.Conn
-	inConnsBuf  [][]byte
+	inConnsBuf  []*serverMessage
 	outConns    map[string]net.Conn
 	workersLock sync.Mutex
 	workers     []ServerWorker
@@ -17,6 +17,7 @@ type Server struct {
 }
 
 type Message struct {
+	work *Work
 }
 
 func (s *Server) Run(port int, nodes map[string]string) {
@@ -61,19 +62,29 @@ func (s *Server) dispatch() {
 }
 
 func (s *Server) readConns() {
-	s.inConnsBuf = make([][]byte, len(s.inConns))
+	s.inConnsBuf = make([]*serverMessage, len(s.inConns))
 	for {
-		for _, conn := range s.inConns {
-			data := []byte{}
-			_, err := conn.Read(data)
-			for _, da
+		for i, conn := range s.inConns {
+			msg := s.inConnsBuf[i]
+			if msg == nil {
+				msg = NewServerMessage()
+				s.inConnsBuf[i] = msg
+			}
+			err := msg.consume(conn)
+			if err != nil {
+				panic(err)
+			}
+			if msg.isComplete() {
+				work, err := msg.convertToWork()
+				if err != nil {
+					panic(err)
+				}
+				s.msgBuffer = append(s.msgBuffer, &Message{
+					work: work,
+				})
+				s.inConnsBuf[i] = nil
+			}
 		}
-	}
-}
-
-func haveEndSymbol(data []byte) int {
-	for i := 0; i < len(data); i++ {
-		
 	}
 }
 
