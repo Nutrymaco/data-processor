@@ -118,21 +118,21 @@ func Test(t *testing.T) {
 
 func Test_MultipleTargets(t *testing.T) {
 	source := NewArraySource([]*Work{
-		NewStringWork("test").WithMetadata(map[string]any{"type": 1}),
-		NewStringWork("test2").WithMetadata(map[string]any{"type": 2}),
-		NewStringWork("test2").WithMetadata(map[string]any{"type": 2}),
-		NewStringWork("test").WithMetadata(map[string]any{"type": 1}),
+		NewStringWork("test").WithMetadata(map[string]string{"type": "1"}),
+		NewStringWork("test2").WithMetadata(map[string]string{"type": "2"}),
+		NewStringWork("test2").WithMetadata(map[string]string{"type": "2"}),
+		NewStringWork("test").WithMetadata(map[string]string{"type": "1"}),
 	}, 1)
 	target1 := NewArrayTarget()
 	target2 := NewArrayTarget()
 	processor := NewProcessor(
 		source,
 		NewAggregatedTarget(
-			TargetWithSelect(target1, func(metadata map[string]any) bool {
-				return metadata["type"] == 1
+			TargetWithSelect(target1, func(metadata map[string]string) bool {
+				return metadata["type"] == "1"
 			}),
-			TargetWithSelect(target2, func(metadata map[string]any) bool {
-				return metadata["type"] == 2
+			TargetWithSelect(target2, func(metadata map[string]string) bool {
+				return metadata["type"] == "2"
 			}),
 		),
 		[]Action{},
@@ -168,13 +168,13 @@ func Test_ChainOfPipelines(t *testing.T) {
 		NewAggregatedTarget(
 			TargetWithSelect(
 				pipe1,
-				func(metadata map[string]any) bool {
-					return metadata["type"] == 1
+				func(metadata map[string]string) bool {
+					return metadata["type"] == "1"
 				}),
 			TargetWithSelect(
 				pipe2,
-				func(metadata map[string]any) bool {
-					return metadata["type"] == 2
+				func(metadata map[string]string) bool {
+					return metadata["type"] == "2"
 				},
 			),
 		),
@@ -183,9 +183,9 @@ func Test_ChainOfPipelines(t *testing.T) {
 				func(work *Work, out chan *Work) {
 					str := work.ReadString()
 					if len(str) == 4 {
-						work.Metadata["type"] = 1
+						work.Metadata["type"] = "1"
 					} else {
-						work.Metadata["type"] = 2
+						work.Metadata["type"] = "2"
 					}
 					fmt.Println("[action] produce updated work", out)
 					out <- work
