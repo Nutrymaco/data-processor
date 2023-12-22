@@ -28,10 +28,8 @@ func Test(t *testing.T) {
 	lock := new(sync.Mutex)
 
 	processor := NewProcessor(
-		[]Source{source1, source2},
-		[]SelectiveTarget{
-			TargetWithoutSelect(target),
-		},
+		NewAggregatedSource(source1, source2),
+		target,
 		[]Action{
 			// split text to words
 			// 1->N
@@ -89,7 +87,10 @@ func Test(t *testing.T) {
 		},
 	)
 
-	processor.Process()
+	done, err := processor.Process()
+	assert.Nil(t, err)
+	<-done
+
 	fmt.Println(target.GetArray())
 	report := target.GetArray()[0].ReadString()
 	fmt.Println("----------\nreport:")
@@ -129,21 +130,20 @@ func Test_MultipleTargets(t *testing.T) {
 	target1 := NewArrayTarget()
 	target2 := NewArrayTarget()
 	processor := NewProcessor(
-		[]Source{source},
-		[]SelectiveTarget{
+		source,
+		NewAggregatedTarget(
 			TargetWithSelect(target1, func(metadata map[string]any) bool {
 				return metadata["type"] == 1
 			}),
 			TargetWithSelect(target2, func(metadata map[string]any) bool {
 				return metadata["type"] == 2
 			}),
-		},
+		),
 		[]Action{},
 	)
-	err := processor.Process()
-	if err != nil {
-		panic(err)
-	}
+	done, err := processor.Process()
+	assert.Nil(t, err)
+	<-done
 	fmt.Println("target1")
 	for _, work := range target1.array {
 		fmt.Print(work.ReadString())
@@ -168,8 +168,8 @@ func Test_ChainOfPipelines(t *testing.T) {
 	pipe1 := NewChannelPipe()
 	pipe2 := NewChannelPipe()
 	processor := NewProcessor(
-		[]Source{source1},
-		[]SelectiveTarget{
+		source1,
+		NewAggregatedTarget(
 			TargetWithSelect(
 				pipe1,
 				func(metadata map[string]any) bool {
@@ -181,7 +181,7 @@ func Test_ChainOfPipelines(t *testing.T) {
 					return metadata["type"] == 2
 				},
 			),
-		},
+		),
 		[]Action{
 			NewAction(
 				func(work *Work, out chan *Work) {
@@ -191,7 +191,9 @@ func Test_ChainOfPipelines(t *testing.T) {
 					} else {
 						work.Metadata["type"] = 2
 					}
+					fmt.Println("[action] produce updated work", out)
 					out <- work
+					fmt.Println("[action] finish produce updated work")
 				},
 				func(out chan *Work) {
 
@@ -201,20 +203,26 @@ func Test_ChainOfPipelines(t *testing.T) {
 	)
 	target1 := NewArrayTarget()
 	processor1 := NewProcessor(
-		[]Source{pipe1},
-		[]SelectiveTarget{TargetWithoutSelect(target1)},
+		pipe1,
+		target1,
 		[]Action{},
 	)
 	target2 := NewArrayTarget()
 	processor2 := NewProcessor(
-		[]Source{pipe2},
-		[]SelectiveTarget{TargetWithoutSelect(target2)},
+		pipe2,
+		target2,
 		[]Action{},
 	)
 
-	go processor.Process()
-	processor1.Process()
-	processor2.Process()
+	done1, err := processor.Process()
+	assert.Nil(t, err)
+	done2, err := processor1.Process()
+	assert.Nil(t, err)
+	done3, err := processor2.Process()
+	assert.Nil(t, err)
+	<-done1
+	<-done2
+	<-done3
 
 	target1Res := []string{}
 	fmt.Println("target 1")
@@ -249,8 +257,8 @@ func Test_NtoMReducer(t *testing.T) {
 	accumulator := []*Work{}
 	lock := new(sync.Mutex)
 	processor := NewProcessor(
-		[]Source{source},
-		[]SelectiveTarget{TargetWithoutSelect(target)},
+		source,
+		target,
 		[]Action{
 			NewAction(
 				func(work *Work, out chan *Work) {
@@ -276,8 +284,9 @@ func Test_NtoMReducer(t *testing.T) {
 			),
 		},
 	)
-	err := processor.Process()
+	done, err := processor.Process()
 	assert.Nil(t, err)
+	<-done
 	targetRes := []string{}
 	for _, work := range target.array {
 		str := work.ReadString()
@@ -307,6 +316,7 @@ func (s *ArraySource) Read() (chan *Work, error) {
 			workCh <- val
 			time.Sleep(time.Duration(s.timeoutSec * int(time.Second)))
 		}
+		fmt.Println("[array source] produce nil")
 		workCh <- nil
 	}()
 	return workCh, nil
@@ -328,6 +338,7 @@ func (t *ArrayTarget) Write(work *Work) error {
 	t.lock.Lock()
 	t.array = append(t.array, work)
 	t.lock.Unlock()
+	fmt.Println("[array target] write work to target")
 	return nil
 }
 
@@ -368,14 +379,17 @@ func NewChannelPipe() *ChannelPipe {
 }
 
 func (p *ChannelPipe) Read() (chan *Work, error) {
+	fmt.Print("[pipe] Read()")
 	return *p, nil
 }
 
 func (p *ChannelPipe) Write(work *Work) error {
+	fmt.Println("[pipe] Write(work)", work)
 	*p <- work
 	return nil
 }
 
 func (p *ChannelPipe) Done() {
+	fmt.Println("[pipe] Done()")
 	*p <- nil
 }

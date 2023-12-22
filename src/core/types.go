@@ -10,13 +10,8 @@ type Target interface {
 }
 
 type Pipe interface {
-	SelectiveTarget
-	Source
-}
-
-type SelectiveTarget interface {
 	Target
-	Select(metadata map[string]any) bool
+	Source
 }
 
 type Action interface {

@@ -2,108 +2,91 @@ package core
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 )
 
 type Processor struct {
-	sources []Source
-	targets []SelectiveTarget
+	source  Source
+	target  Target
 	actions []Action
 }
 
-func NewProcessor(sources []Source, targets []SelectiveTarget, actions []Action) *Processor {
+func NewProcessor(source Source, target Target, actions []Action) *Processor {
 	return &Processor{
-		sources: sources,
-		targets: targets,
+		source:  source,
+		target:  target,
 		actions: actions,
 	}
 }
 
-func (p *Processor) Process() error {
-	sourceChannels := []chan *Work{}
-	for _, source := range p.sources {
-		workCh, err := source.Read()
-		if err != nil {
-			return err
-		}
-		sourceChannels = append(sourceChannels, workCh)
+func (p *Processor) Process() (done chan struct{}, err error) {
+	sourceCh, err := p.source.Read()
+	if err != nil {
+		fmt.Println("[processor][error]", err)
+		return nil, err
 	}
-	sourceCh := p.combineChannels(sourceChannels)
+	fmt.Println("[processor] source is ready")
 	outCh := p.runPipeline(sourceCh)
-	p.writeToTargets(outCh)
-	return nil
+	fmt.Println("[processor] pipeline launched, out channel:", outCh)
+	done = p.writeWork(outCh)
+	return done, nil
 }
 
-func (p *Processor) writeToTargets(outCh chan *Work) {
-	workersCounter := new(atomic.Int32)
-	for work := range outCh {
-		if work == nil {
-			for _, target := range p.targets {
-				target.Done()
-			}
-			break
-		}
-		for _, target := range p.targets {
-			if target.Select(work.Metadata) {
-				workersCounter.Add(1)
-				go func(w *Work) {
-					target.Write(w)
-					workersCounter.Add(-1)
-				}(work)
-				break
-			}
-		}
-	}
-	for workersCounter.Load() != 0 {
-
-	}
-}
-
-func (p *Processor) combineChannels(channels []chan *Work) chan *Work {
-	combined := make(chan *Work)
-	doneCount := new(atomic.Int32)
-	doneCount.Store(int32(len(channels)))
+func (p *Processor) writeWork(outCh chan *Work) (done chan struct{}) {
+	done = make(chan struct{})
 	go func() {
-		for {
-			for _, ch := range channels {
-				select {
-				case work := <-ch:
-					if work == nil {
-						doneCount.Add(-1)
-					} else {
-						combined <- work
-					}
-				}
-			}
-			if doneCount.Load() == 0 {
-				fmt.Println("sent done from sources")
-				combined <- nil
+		wg := new(sync.WaitGroup)
+		fmt.Println("[processor] start writing work to target")
+		for work := range outCh {
+			if work == nil {
+				fmt.Println("[processor] start target.Done()", p.target)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					p.target.Done()
+				}()
 				break
 			}
+			fmt.Println("[processor] start write work" + fmt.Sprint(&work) + " to target")
+			wg.Add(1)
+			go func(w *Work) {
+				defer wg.Done()
+				err := p.target.Write(w)
+				if err != nil {
+					fmt.Println("[processor][error]", err)
+					panic(err)
+				}
+			}(work)
 		}
+		wg.Wait()
+		done <- struct{}{}
 	}()
-	return combined
+	return done
 }
 
 func (p *Processor) runPipeline(sourceChan chan *Work) chan *Work {
 	for _, action := range p.actions {
 		outCh := make(chan *Work)
-		workersCounter := new(atomic.Int32)
 		go func(in, out chan *Work, action Action) {
+			workersCounter := new(atomic.Int32)
 			for work := range in {
 				if work == nil {
+					fmt.Println("[pipeline] chan produce nil work")
 					break
 				}
+				fmt.Println("[pipeline] chan produce work, start worker")
 				workersCounter.Add(1)
 				go func(w *Work) {
 					action.Do(w, out)
+					fmt.Println("[pipeline] action is done")
 					workersCounter.Add(-1)
 				}(work)
 			}
 			for workersCounter.Load() != 0 {
-
 			}
 			action.Done(out)
+			fmt.Println("[pipeline] action produce nil work", out)
 			out <- nil
 		}(sourceChan, outCh, action)
 		sourceChan = outCh
