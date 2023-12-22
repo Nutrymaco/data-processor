@@ -12,23 +12,19 @@ import (
 )
 
 func Test(t *testing.T) {
-
-	source1 := NewArraySource([]*Work{
+	source := NewArraySource([]*Work{
 		NewStringWork("This is a sentence in which programm will count words"),
 		NewStringWork("This is another sentence with words words"),
-	}, 1)
-	source2 := NewArraySource([]*Work{
 		NewStringWork("Two cows see each other"),
 		NewStringWork("Two programmers write program that count words"),
 	}, 1)
-
 	target := NewArrayTarget()
 
 	words := map[string]int{}
 	lock := new(sync.Mutex)
 
 	processor := NewProcessor(
-		NewAggregatedSource(source1, source2),
+		source,
 		target,
 		[]Action{
 			// split text to words
