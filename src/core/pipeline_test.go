@@ -23,7 +23,7 @@ func Test(t *testing.T) {
 	words := map[string]int{}
 	lock := new(sync.Mutex)
 
-	processor := NewProcessor(
+	pipeline := NewPipeline(
 		source,
 		target,
 		[]Action{
@@ -83,7 +83,7 @@ func Test(t *testing.T) {
 		},
 	)
 
-	done, err := processor.Process()
+	done, err := pipeline.Process()
 	assert.Nil(t, err)
 	<-done
 
@@ -125,7 +125,7 @@ func Test_ChainOfPipelines(t *testing.T) {
 	}, 1)
 	pipe1 := NewChannelPipe()
 	pipe2 := NewChannelPipe()
-	processor := NewProcessor(
+	pipeline := NewPipeline(
 		source1,
 		NewAggregatedTarget(
 			TargetWithSelect(
@@ -160,23 +160,23 @@ func Test_ChainOfPipelines(t *testing.T) {
 		},
 	)
 	target1 := NewArrayTarget()
-	processor1 := NewProcessor(
+	pipeline1 := NewPipeline(
 		pipe1,
 		target1,
 		[]Action{},
 	)
 	target2 := NewArrayTarget()
-	processor2 := NewProcessor(
+	pipeline2 := NewPipeline(
 		pipe2,
 		target2,
 		[]Action{},
 	)
 
-	done1, err := processor.Process()
+	done1, err := pipeline.Process()
 	assert.Nil(t, err)
-	done2, err := processor1.Process()
+	done2, err := pipeline1.Process()
 	assert.Nil(t, err)
-	done3, err := processor2.Process()
+	done3, err := pipeline2.Process()
 	assert.Nil(t, err)
 	<-done1
 	<-done2
@@ -214,7 +214,7 @@ func Test_NtoMReducer(t *testing.T) {
 
 	accumulator := []*Work{}
 	lock := new(sync.Mutex)
-	processor := NewProcessor(
+	pipeline := NewPipeline(
 		source,
 		target,
 		[]Action{
@@ -242,7 +242,7 @@ func Test_NtoMReducer(t *testing.T) {
 			),
 		},
 	)
-	done, err := processor.Process()
+	done, err := pipeline.Process()
 	assert.Nil(t, err)
 	<-done
 	targetRes := []string{}

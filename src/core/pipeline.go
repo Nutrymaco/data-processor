@@ -6,41 +6,41 @@ import (
 	"sync/atomic"
 )
 
-type Processor struct {
+type Pipeline struct {
 	source  Source
 	target  Target
 	actions []Action
 }
 
-func NewProcessor(source Source, target Target, actions []Action) *Processor {
-	return &Processor{
+func NewPipeline(source Source, target Target, actions []Action) *Pipeline {
+	return &Pipeline{
 		source:  source,
 		target:  target,
 		actions: actions,
 	}
 }
 
-func (p *Processor) Process() (done chan struct{}, err error) {
+func (p *Pipeline) Process() (done chan struct{}, err error) {
 	sourceCh, err := p.source.Read()
 	if err != nil {
-		fmt.Println("[processor][error]", err)
+		fmt.Println("[pipeline][error]", err)
 		return nil, err
 	}
-	fmt.Println("[processor] source is ready")
+	fmt.Println("[pipeline] source is ready")
 	outCh := p.runPipeline(sourceCh)
-	fmt.Println("[processor] pipeline launched, out channel:", outCh)
+	fmt.Println("[pipeline] pipeline launched, out channel:", outCh)
 	done = p.writeWork(outCh)
 	return done, nil
 }
 
-func (p *Processor) writeWork(outCh chan *Work) (done chan struct{}) {
+func (p *Pipeline) writeWork(outCh chan *Work) (done chan struct{}) {
 	done = make(chan struct{})
 	go func() {
 		wg := new(sync.WaitGroup)
-		fmt.Println("[processor] start writing work to target")
+		fmt.Println("[pipeline] start writing work to target")
 		for work := range outCh {
 			if work == nil {
-				fmt.Println("[processor] start target.Done()", p.target)
+				fmt.Println("[pipeline] start target.Done()", p.target)
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
@@ -48,13 +48,13 @@ func (p *Processor) writeWork(outCh chan *Work) (done chan struct{}) {
 				}()
 				break
 			}
-			fmt.Println("[processor] start write work" + fmt.Sprint(&work) + " to target")
+			fmt.Println("[pipeline] start write work" + fmt.Sprint(&work) + " to target")
 			wg.Add(1)
 			go func(w *Work) {
 				defer wg.Done()
 				err := p.target.Write(w)
 				if err != nil {
-					fmt.Println("[processor][error]", err)
+					fmt.Println("[pipeline][error]", err)
 					panic(err)
 				}
 			}(work)
@@ -65,7 +65,7 @@ func (p *Processor) writeWork(outCh chan *Work) (done chan struct{}) {
 	return done
 }
 
-func (p *Processor) runPipeline(sourceChan chan *Work) chan *Work {
+func (p *Pipeline) runPipeline(sourceChan chan *Work) chan *Work {
 	for _, action := range p.actions {
 		outCh := make(chan *Work)
 		go func(in, out chan *Work, action Action) {
