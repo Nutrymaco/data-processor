@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test(t *testing.T) {
+func Test_CountWords(t *testing.T) {
 	source := NewArraySource([]*Work{
 		NewStringWork("This is a sentence in which programm will count words"),
 		NewStringWork("This is another sentence with words words"),
