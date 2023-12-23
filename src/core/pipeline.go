@@ -3,7 +3,6 @@ package core
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
 )
@@ -49,13 +48,15 @@ func (p *Pipeline) writeWork(outCh chan *Work) (done chan struct{}) {
 			p.logPipeline("Start writing work to target")
 			workers.Add(1)
 			go func(w *Work) {
-				defer workers.Done()
+				defer func() {
+					p.logPipeline("Finish writing work to target")
+					workers.Done()
+				}()
 				err := p.target.Write(w)
 				if err != nil {
 					p.logError(err, "Error while writing work to target, panicking")
 					panic(err)
 				}
-				p.logPipeline("Finish writing work to target")
 			}(work)
 		}
 		workers.Wait()
@@ -73,23 +74,24 @@ func (p *Pipeline) runPipeline(sourceChan chan *Work) chan *Work {
 	for actionId, action := range p.actions {
 		outCh := make(chan *Work)
 		go func(in, out chan *Work, actionId int, action Action) {
-			workersCounter := new(atomic.Int32)
+			workers := new(sync.WaitGroup)
 			for work := range in {
 				if work == nil {
 					p.logAction(actionId, "Input channel produce nil work")
 					break
 				}
 				p.logAction(actionId, "Input channel produced work, start worker")
-				workersCounter.Add(1)
+				workers.Add(1)
 				go func(w *Work) {
+					defer func() {
+						p.logAction(actionId, "Worker is done")
+						workers.Done()
+					}()
 					action.Do(w, out)
-					p.logAction(actionId, "Worker is done")
-					workersCounter.Add(-1)
 				}(work)
 			}
 			p.logAction(actionId, "Waiting action workers")
-			for workersCounter.Load() != 0 {
-			}
+			workers.Wait()
 			p.logAction(actionId, "Invoking action.Done()")
 			action.Done(out)
 			p.logAction(actionId, "Finish action.Done(), producing nil")
