@@ -4,16 +4,20 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/rs/zerolog/log"
 )
 
 type Pipeline struct {
+	name    string
 	source  Source
 	target  Target
 	actions []Action
 }
 
-func NewPipeline(source Source, target Target, actions []Action) *Pipeline {
+func NewPipeline(name string, source Source, target Target, actions []Action) *Pipeline {
 	return &Pipeline{
+		name:    name,
 		source:  source,
 		target:  target,
 		actions: actions,
@@ -21,75 +25,94 @@ func NewPipeline(source Source, target Target, actions []Action) *Pipeline {
 }
 
 func (p *Pipeline) Process() (done chan struct{}, err error) {
+	p.logPipeline("Start reading source")
 	sourceCh, err := p.source.Read()
 	if err != nil {
-		fmt.Println("[pipeline][error]", err)
+		p.logError(err, "Error reading source")
 		return nil, err
 	}
-	fmt.Println("[pipeline] source is ready")
 	outCh := p.runPipeline(sourceCh)
-	fmt.Println("[pipeline] pipeline launched, out channel:", outCh)
 	done = p.writeWork(outCh)
 	return done, nil
 }
 
 func (p *Pipeline) writeWork(outCh chan *Work) (done chan struct{}) {
+	p.logPipeline("Start writing to target")
 	done = make(chan struct{})
 	go func() {
-		wg := new(sync.WaitGroup)
-		fmt.Println("[pipeline] start writing work to target")
+		workers := new(sync.WaitGroup)
 		for work := range outCh {
 			if work == nil {
-				fmt.Println("[pipeline] start target.Done()", p.target)
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					p.target.Done()
-				}()
 				break
 			}
-			fmt.Println("[pipeline] start write work" + fmt.Sprint(&work) + " to target")
-			wg.Add(1)
+			p.logWork(work, "Start writing work to target")
+			p.logPipeline("Start writing work to target")
+			workers.Add(1)
 			go func(w *Work) {
-				defer wg.Done()
+				defer workers.Done()
 				err := p.target.Write(w)
 				if err != nil {
-					fmt.Println("[pipeline][error]", err)
+					p.logError(err, "Error while writing work to target, panicking")
 					panic(err)
 				}
+				p.logPipeline("Finish writing work to target")
 			}(work)
 		}
-		wg.Wait()
+		workers.Wait()
+		p.logPipeline("Start target.Done()")
+		p.target.Done()
+		p.logPipeline("Finish target.Done()")
+		p.logPipeline("Finish writing to target")
 		done <- struct{}{}
 	}()
 	return done
 }
 
 func (p *Pipeline) runPipeline(sourceChan chan *Work) chan *Work {
-	for _, action := range p.actions {
+	p.logPipeline("Start launching pipeline")
+	for actionId, action := range p.actions {
 		outCh := make(chan *Work)
-		go func(in, out chan *Work, action Action) {
+		go func(in, out chan *Work, actionId int, action Action) {
 			workersCounter := new(atomic.Int32)
 			for work := range in {
 				if work == nil {
-					fmt.Println("[pipeline] chan produce nil work")
+					p.logAction(actionId, "Input channel produce nil work")
 					break
 				}
-				fmt.Println("[pipeline] chan produce work, start worker")
+				p.logAction(actionId, "Input channel produced work, start worker")
 				workersCounter.Add(1)
 				go func(w *Work) {
 					action.Do(w, out)
-					fmt.Println("[pipeline] action is done")
+					p.logAction(actionId, "Worker is done")
 					workersCounter.Add(-1)
 				}(work)
 			}
+			p.logAction(actionId, "Waiting action workers")
 			for workersCounter.Load() != 0 {
 			}
+			p.logAction(actionId, "Invoking action.Done()")
 			action.Done(out)
-			fmt.Println("[pipeline] action produce nil work", out)
+			p.logAction(actionId, "Finish action.Done(), producing nil")
 			out <- nil
-		}(sourceChan, outCh, action)
+		}(sourceChan, outCh, actionId, action)
 		sourceChan = outCh
 	}
+	p.logPipeline("Finish launching pipeline")
 	return sourceChan
+}
+
+func (p *Pipeline) logPipeline(msg string) {
+	log.Info().Str("pipeline", p.name).Msg(msg)
+}
+
+func (p *Pipeline) logAction(actionId int, msg string) {
+	log.Info().Str("pipeline", p.name).Int("action", actionId).Msg(msg)
+}
+
+func (p *Pipeline) logWork(work *Work, msg string) {
+	log.Debug().Str("pipeline", p.name).Str("work.metadata", fmt.Sprint(work.Metadata)).Msg(msg)
+}
+
+func (p *Pipeline) logError(err error, msg string) {
+	log.Error().Err(err).Msg(msg)
 }

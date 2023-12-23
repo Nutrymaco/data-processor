@@ -24,6 +24,7 @@ func Test_CountWords(t *testing.T) {
 	lock := new(sync.Mutex)
 
 	pipeline := NewPipeline(
+		"Count words",
 		source,
 		target,
 		[]Action{
@@ -126,6 +127,7 @@ func Test_ChainOfPipelines(t *testing.T) {
 	pipe1 := NewChannelPipe()
 	pipe2 := NewChannelPipe()
 	pipeline := NewPipeline(
+		"Common",
 		source1,
 		NewAggregatedTarget(
 			TargetWithSelect(
@@ -161,12 +163,14 @@ func Test_ChainOfPipelines(t *testing.T) {
 	)
 	target1 := NewArrayTarget()
 	pipeline1 := NewPipeline(
+		"Type=1",
 		pipe1,
 		target1,
 		[]Action{},
 	)
 	target2 := NewArrayTarget()
 	pipeline2 := NewPipeline(
+		"Type=2",
 		pipe2,
 		target2,
 		[]Action{},
@@ -215,6 +219,7 @@ func Test_NtoMReducer(t *testing.T) {
 	accumulator := []*Work{}
 	lock := new(sync.Mutex)
 	pipeline := NewPipeline(
+		"Combining values",
 		source,
 		target,
 		[]Action{
