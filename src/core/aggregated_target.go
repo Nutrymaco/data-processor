@@ -17,19 +17,15 @@ func NewAggregatedTarget(targets ...SelectiveTarget) *aggregatedTarget {
 	}
 }
 
-func (t *aggregatedTarget) Write(work *Work) error {
+func (t *aggregatedTarget) Write(work *Work) {
 	fmt.Println("[agg target] search target to write work")
 	for _, target := range t.targets {
 		if target.Select(work.Metadata) {
 			fmt.Println("[agg target] found target to write work")
-			err := target.Write(work)
-			if err != nil {
-				return err
-			}
+			target.Write(work)
 			break
 		}
 	}
-	return nil
 }
 
 func (t *aggregatedTarget) Done() {
@@ -47,15 +43,6 @@ func TargetWithSelect(target Target, selector func(metadata map[string]string) b
 	return &selectiveTargetImpl{
 		Target:   target,
 		selector: selector,
-	}
-}
-
-func TargetWithoutSelect(target Target) SelectiveTarget {
-	return &selectiveTargetImpl{
-		Target: target,
-		selector: func(metadata map[string]string) bool {
-			return true
-		},
 	}
 }
 

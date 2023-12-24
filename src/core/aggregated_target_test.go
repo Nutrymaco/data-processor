@@ -95,8 +95,7 @@ func Test_AggregateTarget(t *testing.T) {
 			}
 			agg := NewAggregatedTarget(targets...)
 			for _, w := range tc.input {
-				err := agg.Write(w)
-				assert.Nil(t, err)
+				agg.Write(w)
 			}
 			for i, target := range targets {
 				expected := tc.results[i]

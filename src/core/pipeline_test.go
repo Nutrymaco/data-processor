@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -84,7 +85,7 @@ func Test_CountWords(t *testing.T) {
 		},
 	)
 
-	done, err := pipeline.Process()
+	done, err := pipeline.Run()
 	assert.Nil(t, err)
 	<-done
 
@@ -176,11 +177,11 @@ func Test_ChainOfPipelines(t *testing.T) {
 		[]Action{},
 	)
 
-	done1, err := pipeline.Process()
+	done1, err := pipeline.Run()
 	assert.Nil(t, err)
-	done2, err := pipeline1.Process()
+	done2, err := pipeline1.Run()
 	assert.Nil(t, err)
-	done3, err := pipeline2.Process()
+	done3, err := pipeline2.Run()
 	assert.Nil(t, err)
 	<-done1
 	<-done2
@@ -247,7 +248,7 @@ func Test_NtoMReducer(t *testing.T) {
 			),
 		},
 	)
-	done, err := pipeline.Process()
+	done, err := pipeline.Run()
 	assert.Nil(t, err)
 	<-done
 	targetRes := []string{}
@@ -257,6 +258,18 @@ func Test_NtoMReducer(t *testing.T) {
 	}
 	fmt.Println("result", targetRes)
 	assert.Equal(t, []string{"val1val2", "val3val4", "val5"}, targetRes)
+}
+
+func Test_ErrorInSourceLeadToError(t *testing.T) {
+	source := NewGenericSource(
+		func() (chan *Work, error) {
+			return nil, errors.New("error in source")
+		},
+	)
+	pipeline := NewPipeline("Error in source", source, nil, nil)
+	ch, err := pipeline.Run()
+	assert.NotNil(t, err)
+	assert.Nil(t, ch)
 }
 
 type ArraySource struct {
@@ -297,12 +310,11 @@ func NewArrayTarget() *ArrayTarget {
 	}
 }
 
-func (t *ArrayTarget) Write(work *Work) error {
+func (t *ArrayTarget) Write(work *Work) {
 	t.lock.Lock()
 	t.array = append(t.array, work)
 	t.lock.Unlock()
 	fmt.Println("[array target] write work to target")
-	return nil
 }
 
 func (t *ArrayTarget) Done() {
@@ -346,13 +358,58 @@ func (p *ChannelPipe) Read() (chan *Work, error) {
 	return *p, nil
 }
 
-func (p *ChannelPipe) Write(work *Work) error {
+func (p *ChannelPipe) Write(work *Work) {
 	fmt.Println("[pipe] Write(work)", work)
 	*p <- work
-	return nil
 }
 
 func (p *ChannelPipe) Done() {
 	fmt.Println("[pipe] Done()")
 	*p <- nil
+}
+
+type DiscardTarget struct{}
+
+func NewDiscardTarget() *DiscardTarget {
+	return &DiscardTarget{}
+}
+func (t *DiscardTarget) Write(work *Work) error {
+	return nil
+}
+func (t *DiscardTarget) Done() {
+
+}
+
+type GenericSource struct {
+	read func() (chan *Work, error)
+}
+
+func NewGenericSource(read func() (chan *Work, error)) *GenericSource {
+	return &GenericSource{
+		read: read,
+	}
+}
+
+func (s *GenericSource) Read() (chan *Work, error) {
+	return s.read()
+}
+
+type GenericTarget struct {
+	write func(work *Work)
+	done  func()
+}
+
+func NewGenericTarget(write func(work *Work), done func()) *GenericTarget {
+	return &GenericTarget{
+		write: write,
+		done:  done,
+	}
+}
+
+func (t *GenericTarget) Write(work *Work) {
+	t.write(work)
+}
+
+func (t *GenericTarget) Done() {
+	t.done()
 }

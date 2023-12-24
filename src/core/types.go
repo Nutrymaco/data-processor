@@ -5,7 +5,7 @@ type Source interface {
 }
 
 type Target interface {
-	Write(work *Work) error
+	Write(work *Work)
 	Done()
 }
 

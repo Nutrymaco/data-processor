@@ -23,7 +23,7 @@ func NewPipeline(name string, source Source, target Target, actions []Action) *P
 	}
 }
 
-func (p *Pipeline) Process() (done chan struct{}, err error) {
+func (p *Pipeline) Run() (done chan struct{}, err error) {
 	p.logPipeline("Start reading source")
 	sourceCh, err := p.source.Read()
 	if err != nil {
@@ -52,11 +52,7 @@ func (p *Pipeline) writeWork(outCh chan *Work) (done chan struct{}) {
 					p.logPipeline("Finish writing work to target")
 					workers.Done()
 				}()
-				err := p.target.Write(w)
-				if err != nil {
-					p.logError(err, "Error while writing work to target, panicking")
-					panic(err)
-				}
+				p.target.Write(w)
 			}(work)
 		}
 		workers.Wait()
@@ -73,30 +69,14 @@ func (p *Pipeline) runPipeline(sourceChan chan *Work) chan *Work {
 	p.logPipeline("Start launching pipeline")
 	for actionId, action := range p.actions {
 		outCh := make(chan *Work)
-		go func(in, out chan *Work, actionId int, action Action) {
-			workers := new(sync.WaitGroup)
-			for work := range in {
-				if work == nil {
-					p.logAction(actionId, "Input channel produce nil work")
-					break
-				}
-				p.logAction(actionId, "Input channel produced work, start worker")
-				workers.Add(1)
-				go func(w *Work) {
-					defer func() {
-						p.logAction(actionId, "Worker is done")
-						workers.Done()
-					}()
-					action.Do(w, out)
-				}(work)
-			}
-			p.logAction(actionId, "Waiting action workers")
-			workers.Wait()
-			p.logAction(actionId, "Invoking action.Done()")
-			action.Done(out)
-			p.logAction(actionId, "Finish action.Done(), producing nil")
-			out <- nil
-		}(sourceChan, outCh, actionId, action)
+		stage := pipelineStage{
+			pipelineName: p.name,
+			actionId:     actionId,
+			action:       action,
+			input:        sourceChan,
+			output:       outCh,
+		}
+		go stage.run()
 		sourceChan = outCh
 	}
 	p.logPipeline("Finish launching pipeline")
@@ -107,14 +87,49 @@ func (p *Pipeline) logPipeline(msg string) {
 	log.Info().Str("pipeline", p.name).Msg(msg)
 }
 
-func (p *Pipeline) logAction(actionId int, msg string) {
-	log.Info().Str("pipeline", p.name).Int("action", actionId).Msg(msg)
-}
-
 func (p *Pipeline) logWork(work *Work, msg string) {
 	log.Debug().Str("pipeline", p.name).Str("work.metadata", fmt.Sprint(work.Metadata)).Msg(msg)
 }
 
 func (p *Pipeline) logError(err error, msg string) {
 	log.Error().Err(err).Msg(msg)
+}
+
+type pipelineStage struct {
+	pipelineName string
+	actionId     int
+	action       Action
+	input        chan *Work
+	output       chan *Work
+}
+
+func (s *pipelineStage) run() {
+	wg := new(sync.WaitGroup)
+	for work := range s.input {
+		if work == nil {
+			s.logAction("Input channel produce nil work")
+			break
+		}
+		wg.Add(1)
+		go s.runWorker(wg, work)
+	}
+	wg.Wait()
+	s.logAction("Waiting action workers")
+	wg.Wait()
+	s.logAction("Invoking action.Done()")
+	s.action.Done(s.output)
+	s.logAction("Finish action.Done(), producing nil")
+	s.output <- nil
+}
+
+func (s *pipelineStage) runWorker(wg *sync.WaitGroup, work *Work) {
+	defer func() {
+		s.logAction("Worker is done")
+		wg.Done()
+	}()
+	s.action.Do(work, s.output)
+}
+
+func (s *pipelineStage) logAction(msg string) {
+	log.Info().Str("pipeline", s.pipelineName).Int("action", s.actionId).Msg(msg)
 }

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -100,6 +101,18 @@ func Test_NilProducedOnlyAfterAllSendNil(t *testing.T) {
 	source3.Write(nil)
 	allSendNil = true
 	lock.Unlock()
+}
+
+func Test_ErrorInRead(t *testing.T) {
+	source := NewArraySource([]*Work{}, 0)
+	errorSource := NewGenericSource(func() (chan *Work, error) {
+		return nil, errors.New("error in source")
+	})
+
+	aggSource := NewAggregatedSource(source, errorSource)
+	ch, err := aggSource.Read()
+	assert.NotNil(t, err)
+	assert.Nil(t, ch)
 }
 
 func indexOf(data string, works []*Work) int {
