@@ -2,6 +2,7 @@ package core
 
 type Work struct {
 	Data     []byte
+	Object   any
 	Metadata map[string]string
 }
 
