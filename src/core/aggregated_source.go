@@ -14,8 +14,8 @@ func NewAggregatedSource(sources ...Source) *aggregatedSource {
 	}
 }
 
-func (s *aggregatedSource) Read() (chan *Work, error) {
-	channels := []chan *Work{}
+func (s *aggregatedSource) Read() (<-chan any, error) {
+	channels := []<-chan any{}
 	for _, source := range s.sources {
 		workCh, err := source.Read()
 		if err != nil {
@@ -24,7 +24,7 @@ func (s *aggregatedSource) Read() (chan *Work, error) {
 		channels = append(channels, workCh)
 	}
 
-	combined := make(chan *Work)
+	combined := make(chan any)
 	doneCount := new(atomic.Int32)
 	doneCount.Store(int32(len(channels)))
 	go func() {

@@ -4,7 +4,7 @@ import "fmt"
 
 type SelectiveTarget interface {
 	Target
-	Select(metadata map[string]string) bool
+	Select(any) bool
 }
 
 type aggregatedTarget struct {
@@ -17,10 +17,10 @@ func NewAggregatedTarget(targets ...SelectiveTarget) *aggregatedTarget {
 	}
 }
 
-func (t *aggregatedTarget) Write(work *Work) {
+func (t *aggregatedTarget) Write(work any) {
 	fmt.Println("[agg target] search target to write work")
 	for _, target := range t.targets {
-		if target.Select(work.Metadata) {
+		if target.Select(work) {
 			fmt.Println("[agg target] found target to write work")
 			target.Write(work)
 			break
@@ -34,18 +34,18 @@ func (t *aggregatedTarget) Done() {
 	}
 }
 
-type selectiveTargetImpl struct {
+type selectiveTargetImpl[T any] struct {
 	Target
-	selector func(metadata map[string]string) bool
+	selector func(T) bool
 }
 
-func TargetWithSelect(target Target, selector func(metadata map[string]string) bool) SelectiveTarget {
-	return &selectiveTargetImpl{
+func TargetWithSelect[T any](target Target, selector func(T) bool) SelectiveTarget {
+	return &selectiveTargetImpl[T]{
 		Target:   target,
 		selector: selector,
 	}
 }
 
-func (t *selectiveTargetImpl) Select(metadata map[string]string) bool {
-	return t.selector(metadata)
+func (t *selectiveTargetImpl[T]) Select(work any) bool {
+	return t.selector(work.(T))
 }

@@ -6,11 +6,25 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type Work struct {
+	data     string
+	metadata map[string]string
+}
+
+func NewStringWork(data string) *Work {
+	return &Work{data: data}
+}
+
+func (w *Work) WithMetadata(m map[string]string) *Work {
+	w.metadata = m
+	return w
+}
+
 func Test_AggregateTarget(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     []*Work
-		selectors []func(metadata map[string]string) bool
+		selectors []func(work *Work) bool
 
 		results [][]*Work
 	}{
@@ -25,15 +39,15 @@ func Test_AggregateTarget(t *testing.T) {
 				NewStringWork("3-1").WithMetadata(map[string]string{"type": "3"}),
 				NewStringWork("3-2").WithMetadata(map[string]string{"type": "3"}),
 			},
-			selectors: []func(metadata map[string]string) bool{
-				func(metadata map[string]string) bool {
-					return metadata["type"] == "1"
+			selectors: []func(work *Work) bool{
+				func(work *Work) bool {
+					return work.metadata["type"] == "1"
 				},
-				func(metadata map[string]string) bool {
-					return metadata["type"] == "2"
+				func(work *Work) bool {
+					return work.metadata["type"] == "2"
 				},
-				func(metadata map[string]string) bool {
-					return metadata["type"] == "3"
+				func(work *Work) bool {
+					return work.metadata["type"] == "3"
 				},
 			},
 
@@ -62,11 +76,11 @@ func Test_AggregateTarget(t *testing.T) {
 				NewStringWork("2-1").WithMetadata(map[string]string{"type": "2"}),
 				NewStringWork("2-2").WithMetadata(map[string]string{"type": "123"}),
 			},
-			selectors: []func(metadata map[string]string) bool{
-				func(metadata map[string]string) bool {
-					return metadata["type"] == "1"
+			selectors: []func(work *Work) bool{
+				func(work *Work) bool {
+					return work.metadata["type"] == "1"
 				},
-				func(metadata map[string]string) bool {
+				func(work *Work) bool {
 					return true
 				},
 			},
@@ -90,7 +104,7 @@ func Test_AggregateTarget(t *testing.T) {
 			targets := []SelectiveTarget{}
 			for _, sel := range tc.selectors {
 				targets = append(targets, TargetWithSelect(
-					NewArrayTarget(), sel,
+					NewArrayTarget[*Work](), sel,
 				))
 			}
 			agg := NewAggregatedTarget(targets...)
@@ -99,7 +113,7 @@ func Test_AggregateTarget(t *testing.T) {
 			}
 			for i, target := range targets {
 				expected := tc.results[i]
-				actual := target.(*selectiveTargetImpl).Target.(*ArrayTarget).GetArray()
+				actual := target.(*selectiveTargetImpl[*Work]).Target.(*ArrayTarget[*Work]).GetArray()
 				assert.Equal(t, expected, actual, "target %d", i)
 			}
 		})

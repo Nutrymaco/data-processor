@@ -17,28 +17,28 @@ func Test_DifferentSpeed(t *testing.T) {
 		{
 			name: "same speed",
 			sources: []Source{
-				NewArraySource([]*Work{
-					NewStringWork("source1-1"), NewStringWork("source1-2"), NewStringWork("source1-3"),
+				NewArraySource([]any{
+					"source1-1", "source1-2", "source1-3",
 				}, 1),
-				NewArraySource([]*Work{
-					NewStringWork("source2-1"), NewStringWork("source2-2"), NewStringWork("source2-3"),
+				NewArraySource([]any{
+					"source2-1", "source2-2", "source2-3",
 				}, 1),
-				NewArraySource([]*Work{
-					NewStringWork("source2-1"), NewStringWork("source2-2"), NewStringWork("source2-3"),
+				NewArraySource([]any{
+					"source2-1", "source2-2", "source2-3",
 				}, 1),
 			},
 		},
 		{
 			name: "different speed",
 			sources: []Source{
-				NewArraySource([]*Work{
-					NewStringWork("source1-1"), NewStringWork("source1-2"), NewStringWork("source1-3"),
+				NewArraySource([]any{
+					"source1-1", "source1-2", "source1-3",
 				}, 2),
-				NewArraySource([]*Work{
-					NewStringWork("source2-1"), NewStringWork("source2-2"), NewStringWork("source2-3"),
+				NewArraySource([]any{
+					"source2-1", "source2-2", "source2-3",
 				}, 1),
-				NewArraySource([]*Work{
-					NewStringWork("source2-1"), NewStringWork("source2-2"), NewStringWork("source2-3"),
+				NewArraySource([]any{
+					"source2-1", "source2-2", "source2-3",
 				}, 3),
 			},
 		},
@@ -50,7 +50,7 @@ func Test_DifferentSpeed(t *testing.T) {
 			ch, err := source.Read()
 			assert.Nil(t, err)
 
-			res := []*Work{}
+			res := []any{}
 			end := false
 			for !end {
 				select {
@@ -90,9 +90,9 @@ func Test_NilProducedOnlyAfterAllSendNil(t *testing.T) {
 			}
 		}
 	}()
-	source1.Write(NewStringWork("test"))
-	source2.Write(NewStringWork("test"))
-	source3.Write(NewStringWork("test"))
+	source1.Write("test")
+	source2.Write("test")
+	source3.Write("test")
 
 	source1.Write(nil)
 	source2.Write(nil)
@@ -104,8 +104,8 @@ func Test_NilProducedOnlyAfterAllSendNil(t *testing.T) {
 }
 
 func Test_ErrorInRead(t *testing.T) {
-	source := NewArraySource([]*Work{}, 0)
-	errorSource := NewGenericSource(func() (chan *Work, error) {
+	source := NewArraySource([]any{}, 0)
+	errorSource := NewGenericSource(func() (<-chan any, error) {
 		return nil, errors.New("error in source")
 	})
 
@@ -115,9 +115,9 @@ func Test_ErrorInRead(t *testing.T) {
 	assert.Nil(t, ch)
 }
 
-func indexOf(data string, works []*Work) int {
+func indexOf(data string, works []any) int {
 	for i, work := range works {
-		if work.ReadString() == data {
+		if work == data {
 			return i
 		}
 	}

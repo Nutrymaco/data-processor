@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -35,7 +34,7 @@ func (p *Pipeline) Run() (done chan struct{}, err error) {
 	return done, nil
 }
 
-func (p *Pipeline) writeWork(outCh chan *Work) (done chan struct{}) {
+func (p *Pipeline) writeWork(outCh <-chan any) (done chan struct{}) {
 	p.logPipeline("Start writing to target")
 	done = make(chan struct{})
 	go func() {
@@ -47,7 +46,7 @@ func (p *Pipeline) writeWork(outCh chan *Work) (done chan struct{}) {
 			p.logWork(work, "Start writing work to target")
 			p.logPipeline("Start writing work to target")
 			workers.Add(1)
-			go func(w *Work) {
+			go func(w any) {
 				defer func() {
 					p.logPipeline("Finish writing work to target")
 					workers.Done()
@@ -65,10 +64,10 @@ func (p *Pipeline) writeWork(outCh chan *Work) (done chan struct{}) {
 	return done
 }
 
-func (p *Pipeline) runPipeline(sourceChan chan *Work) chan *Work {
+func (p *Pipeline) runPipeline(sourceChan <-chan any) <-chan any {
 	p.logPipeline("Start launching pipeline")
 	for actionId, action := range p.actions {
-		outCh := make(chan *Work)
+		outCh := make(chan any)
 		stage := pipelineStage{
 			pipelineName: p.name,
 			actionId:     actionId,
@@ -87,8 +86,8 @@ func (p *Pipeline) logPipeline(msg string) {
 	log.Info().Str("pipeline", p.name).Msg(msg)
 }
 
-func (p *Pipeline) logWork(work *Work, msg string) {
-	log.Debug().Str("pipeline", p.name).Str("work.metadata", fmt.Sprint(work.Metadata)).Msg(msg)
+func (p *Pipeline) logWork(work any, msg string) {
+	log.Debug().Str("pipeline", p.name).Msg(msg)
 }
 
 func (p *Pipeline) logError(err error, msg string) {
@@ -99,8 +98,8 @@ type pipelineStage struct {
 	pipelineName string
 	actionId     int
 	action       Action
-	input        chan *Work
-	output       chan *Work
+	input        <-chan any
+	output       chan<- any
 }
 
 func (s *pipelineStage) run() {
@@ -122,7 +121,7 @@ func (s *pipelineStage) run() {
 	s.output <- nil
 }
 
-func (s *pipelineStage) runWorker(wg *sync.WaitGroup, work *Work) {
+func (s *pipelineStage) runWorker(wg *sync.WaitGroup, work any) {
 	defer func() {
 		s.logAction("Worker is done")
 		wg.Done()

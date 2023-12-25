@@ -3,7 +3,6 @@ package core
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -13,16 +12,13 @@ import (
 )
 
 func Test_CountWords(t *testing.T) {
-	source := NewArraySource([]*Work{
-		NewStringWork("This is a sentence in which programm will count words"),
-		NewStringWork("This is another sentence with words words"),
-		NewStringWork("Two cows see each other"),
-		NewStringWork("Two programmers write program that count words"),
+	source := NewArraySource([]any{
+		"This is a sentence in which programm will count words",
+		"This is another sentence with words words",
+		"Two cows see each other",
+		"Two programmers write program that count words",
 	}, 1)
-	target := NewArrayTarget()
-
-	words := map[string]int{}
-	lock := new(sync.Mutex)
+	target := NewArrayTarget[map[string]int]()
 
 	pipeline := NewPipeline(
 		"Count words",
@@ -31,55 +27,25 @@ func Test_CountWords(t *testing.T) {
 		[]Action{
 			// split text to words
 			// 1->N
-			NewAction(
-				func(work *Work, out chan *Work) {
-					for _, word := range strings.Split(work.ReadString(), " ") {
-						out <- NewStringWork(word)
+			NewFlatMapAction(
+				func(work string, out func(string)) {
+					for _, word := range strings.Split(work, " ") {
+						out(word)
 					}
-				},
-				func(out chan *Work) {
-
 				},
 			),
 			// count words and produce answer
 			// N->1
-			NewAction(
-				func(work *Work, out chan *Work) {
-					word := work.ReadString()
-					lock.Lock()
-					count, exist := words[word]
+			NewReduceAction(
+				map[string]int{},
+				func(report map[string]int, word string) map[string]int {
+					count, exist := report[word]
 					if !exist {
-						words[word] = 1
+						report[word] = 1
 					} else {
-						words[word] = count + 1
+						report[word] = count + 1
 					}
-					lock.Unlock()
-				},
-				func(out chan *Work) {
-					report := ""
-					wordsArr := []struct {
-						word  string
-						count int
-					}{}
-					for word, count := range words {
-						wordsArr = append(wordsArr, struct {
-							word  string
-							count int
-						}{word, count})
-					}
-					sort.Slice(wordsArr, func(i, j int) bool {
-						if wordsArr[i].count > wordsArr[j].count {
-							return true
-						} else if wordsArr[i].count == wordsArr[j].count {
-							return wordsArr[i].word < wordsArr[j].word
-						} else {
-							return false
-						}
-					})
-					for _, entry := range wordsArr {
-						report += fmt.Sprintf("%s %d\n", entry.word, entry.count)
-					}
-					out <- NewStringWork(report)
+					return report
 				},
 			),
 		},
@@ -90,41 +56,36 @@ func Test_CountWords(t *testing.T) {
 	<-done
 
 	fmt.Println(target.GetArray())
-	report := target.GetArray()[0].ReadString()
-	fmt.Println("----------\nreport:")
-	fmt.Println(report)
+	report := target.GetArray()[0]
 	assert.Equal(t,
-		"words 4\n"+
-			"This 2\n"+
-			"Two 2\n"+
-			"count 2\n"+
-			"is 2\n"+
-			"sentence 2\n"+
-			"a 1\n"+
-			"another 1\n"+
-			"cows 1\n"+
-			"each 1\n"+
-			"in 1\n"+
-			"other 1\n"+
-			"program 1\n"+
-			"programm 1\n"+
-			"programmers 1\n"+
-			"see 1\n"+
-			"that 1\n"+
-			"which 1\n"+
-			"will 1\n"+
-			"with 1\n"+
-			"write 1\n",
+		map[string]int{
+			"words":       4,
+			"This":        2,
+			"Two":         2,
+			"count":       2,
+			"is":          2,
+			"sentence":    2,
+			"a":           1,
+			"another":     1,
+			"cows":        1,
+			"each":        1,
+			"in":          1,
+			"other":       1,
+			"program":     1,
+			"programm":    1,
+			"programmers": 1,
+			"see":         1,
+			"that":        1,
+			"which":       1,
+			"will":        1,
+			"with":        1,
+			"write":       1,
+		},
 		report)
 }
 
 func Test_ChainOfPipelines(t *testing.T) {
-	source1 := NewArraySource([]*Work{
-		NewStringWork("data"),
-		NewStringWork("data2"),
-		NewStringWork("data2"),
-		NewStringWork("data"),
-	}, 1)
+	source1 := NewArraySource([]string{"data", "data2", "data2", "data"}, 1)
 	pipe1 := NewChannelPipe()
 	pipe2 := NewChannelPipe()
 	pipeline := NewPipeline(
@@ -133,43 +94,26 @@ func Test_ChainOfPipelines(t *testing.T) {
 		NewAggregatedTarget(
 			TargetWithSelect(
 				pipe1,
-				func(metadata map[string]string) bool {
-					return metadata["type"] == "1"
+				func(work string) bool {
+					return len(work) == 4
 				}),
 			TargetWithSelect(
 				pipe2,
-				func(metadata map[string]string) bool {
-					return metadata["type"] == "2"
+				func(work string) bool {
+					return len(work) == 5
 				},
 			),
 		),
-		[]Action{
-			NewAction(
-				func(work *Work, out chan *Work) {
-					str := work.ReadString()
-					if len(str) == 4 {
-						work.Metadata["type"] = "1"
-					} else {
-						work.Metadata["type"] = "2"
-					}
-					fmt.Println("[action] produce updated work", out)
-					out <- work
-					fmt.Println("[action] finish produce updated work")
-				},
-				func(out chan *Work) {
-
-				},
-			),
-		},
+		[]Action{},
 	)
-	target1 := NewArrayTarget()
+	target1 := NewArrayTarget[string]()
 	pipeline1 := NewPipeline(
 		"Type=1",
 		pipe1,
 		target1,
 		[]Action{},
 	)
-	target2 := NewArrayTarget()
+	target2 := NewArrayTarget[string]()
 	pipeline2 := NewPipeline(
 		"Type=2",
 		pipe2,
@@ -190,15 +134,13 @@ func Test_ChainOfPipelines(t *testing.T) {
 	target1Res := []string{}
 	fmt.Println("target 1")
 	for _, val := range target1.array {
-		str := val.ReadString()
-		fmt.Println(str, val.Metadata)
-		target1Res = append(target1Res, str)
+		target1Res = append(target1Res, val)
 	}
 	target2Res := []string{}
 	fmt.Println("target 2")
 	for _, val := range target2.array {
-		str := val.ReadString()
-		fmt.Println(str, val.Metadata)
+		str := val
+		fmt.Println(str)
 		target2Res = append(target2Res, str)
 	}
 	assert.Equal(t, []string{"data", "data"}, target1Res)
@@ -208,16 +150,10 @@ func Test_ChainOfPipelines(t *testing.T) {
 }
 
 func Test_NtoMReducer(t *testing.T) {
-	source := NewArraySource([]*Work{
-		NewStringWork("val1"),
-		NewStringWork("val2"),
-		NewStringWork("val3"),
-		NewStringWork("val4"),
-		NewStringWork("val5"),
-	}, 1)
-	target := NewArrayTarget()
+	source := NewArraySource([]string{"val1", "val2", "val3", "val4", "val5"}, 1)
+	target := NewArrayTarget[string]()
 
-	accumulator := []*Work{}
+	accumulator := []string{}
 	lock := new(sync.Mutex)
 	pipeline := NewPipeline(
 		"Combining values",
@@ -225,24 +161,22 @@ func Test_NtoMReducer(t *testing.T) {
 		target,
 		[]Action{
 			NewAction(
-				func(work *Work, out chan *Work) {
+				func(work string, out func(string)) {
 					lock.Lock()
 					accumulator = append(accumulator, work)
 					if len(accumulator) == 2 {
 						w1, w2 := accumulator[0], accumulator[1]
-						accumulator = []*Work{}
+						accumulator = []string{}
 						lock.Unlock()
-						str1 := w1.ReadString()
-						str2 := w2.ReadString()
-						out <- NewStringWork(str1 + str2)
+						out(w1 + w2)
 						return
 					}
 					lock.Unlock()
 				},
-				func(out chan *Work) {
+				func(out func(string)) {
 					lock.Lock()
-					str := accumulator[0].ReadString()
-					out <- NewStringWork(str)
+					str := accumulator[0]
+					out(str)
 					lock.Unlock()
 				},
 			),
@@ -253,7 +187,7 @@ func Test_NtoMReducer(t *testing.T) {
 	<-done
 	targetRes := []string{}
 	for _, work := range target.array {
-		str := work.ReadString()
+		str := work
 		targetRes = append(targetRes, str)
 	}
 	fmt.Println("result", targetRes)
@@ -262,7 +196,7 @@ func Test_NtoMReducer(t *testing.T) {
 
 func Test_ErrorInSourceLeadToError(t *testing.T) {
 	source := NewGenericSource(
-		func() (chan *Work, error) {
+		func() (<-chan any, error) {
 			return nil, errors.New("error in source")
 		},
 	)
@@ -272,20 +206,20 @@ func Test_ErrorInSourceLeadToError(t *testing.T) {
 	assert.Nil(t, ch)
 }
 
-type ArraySource struct {
-	array      []*Work
+type ArraySource[T any] struct {
+	array      []T
 	timeoutSec int
 }
 
-func NewArraySource(array []*Work, timeoutSec int) *ArraySource {
-	return &ArraySource{
+func NewArraySource[T any](array []T, timeoutSec int) *ArraySource[T] {
+	return &ArraySource[T]{
 		array:      array,
 		timeoutSec: timeoutSec,
 	}
 }
 
-func (s *ArraySource) Read() (chan *Work, error) {
-	workCh := make(chan *Work)
+func (s *ArraySource[T]) Read() (<-chan any, error) {
+	workCh := make(chan any)
 
 	go func() {
 		for _, val := range s.array {
@@ -298,67 +232,48 @@ func (s *ArraySource) Read() (chan *Work, error) {
 	return workCh, nil
 }
 
-type ArrayTarget struct {
-	array []*Work
+type ArrayTarget[T any] struct {
+	array []T
 	lock  *sync.Mutex
 }
 
-func NewArrayTarget() *ArrayTarget {
-	return &ArrayTarget{
-		array: []*Work{},
+func NewArrayTarget[T any]() *ArrayTarget[T] {
+	return &ArrayTarget[T]{
+		array: []T{},
 		lock:  new(sync.Mutex),
 	}
 }
 
-func (t *ArrayTarget) Write(work *Work) {
+func (t *ArrayTarget[T]) Write(work any) {
 	t.lock.Lock()
-	t.array = append(t.array, work)
+	t.array = append(t.array, work.(T))
 	t.lock.Unlock()
 	fmt.Println("[array target] write work to target")
 }
 
-func (t *ArrayTarget) Done() {
+func (t *ArrayTarget[T]) Done() {
 
 }
 
-func (t *ArrayTarget) GetArray() []*Work {
+func (t *ArrayTarget[T]) GetArray() []T {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	return t.array
 }
 
-type GenericAction struct {
-	do   func(work *Work, out chan *Work)
-	done func(out chan *Work)
-}
-
-func NewAction(do func(work *Work, out chan *Work), done func(out chan *Work)) *GenericAction {
-	return &GenericAction{
-		do:   do,
-		done: done,
-	}
-}
-
-func (a *GenericAction) Do(work *Work, out chan *Work) {
-	a.do(work, out)
-}
-func (a *GenericAction) Done(out chan *Work) {
-	a.done(out)
-}
-
-type ChannelPipe chan *Work
+type ChannelPipe chan any
 
 func NewChannelPipe() *ChannelPipe {
-	pipe := ChannelPipe(make(chan *Work))
+	pipe := ChannelPipe(make(chan any))
 	return &pipe
 }
 
-func (p *ChannelPipe) Read() (chan *Work, error) {
+func (p *ChannelPipe) Read() (<-chan any, error) {
 	fmt.Print("[pipe] Read()")
 	return *p, nil
 }
 
-func (p *ChannelPipe) Write(work *Work) {
+func (p *ChannelPipe) Write(work any) {
 	fmt.Println("[pipe] Write(work)", work)
 	*p <- work
 }
@@ -373,7 +288,7 @@ type DiscardTarget struct{}
 func NewDiscardTarget() *DiscardTarget {
 	return &DiscardTarget{}
 }
-func (t *DiscardTarget) Write(work *Work) error {
+func (t *DiscardTarget) Write(work any) error {
 	return nil
 }
 func (t *DiscardTarget) Done() {
@@ -381,35 +296,58 @@ func (t *DiscardTarget) Done() {
 }
 
 type GenericSource struct {
-	read func() (chan *Work, error)
+	read func() (<-chan any, error)
 }
 
-func NewGenericSource(read func() (chan *Work, error)) *GenericSource {
+func NewGenericSource(read func() (<-chan any, error)) *GenericSource {
 	return &GenericSource{
 		read: read,
 	}
 }
 
-func (s *GenericSource) Read() (chan *Work, error) {
+func (s *GenericSource) Read() (<-chan any, error) {
 	return s.read()
 }
 
 type GenericTarget struct {
-	write func(work *Work)
+	write func(work any)
 	done  func()
 }
 
-func NewGenericTarget(write func(work *Work), done func()) *GenericTarget {
+func NewGenericTarget(write func(work any), done func()) *GenericTarget {
 	return &GenericTarget{
 		write: write,
 		done:  done,
 	}
 }
 
-func (t *GenericTarget) Write(work *Work) {
+func (t *GenericTarget) Write(work any) {
 	t.write(work)
 }
 
 func (t *GenericTarget) Done() {
 	t.done()
+}
+
+type GenericAction[I, O any] struct {
+	do   func(work I, out func(O))
+	done func(out func(O))
+}
+
+func NewAction[I, O any](do func(work I, out func(O)), done func(out func(O))) *GenericAction[I, O] {
+	return &GenericAction[I, O]{
+		do:   do,
+		done: done,
+	}
+}
+
+func (a *GenericAction[I, O]) Do(work any, out chan<- any) {
+	a.do(work.(I), func(o O) {
+		out <- o
+	})
+}
+func (a *GenericAction[I, O]) Done(out chan<- any) {
+	a.done(func(o O) {
+		out <- o
+	})
 }
